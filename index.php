@@ -42,6 +42,8 @@ if (($_GET['format'] ?? '') === 'json') {
         'vejr_kilde' => 'DMI HARMONIE',
         'vejr_opdateret' => $vejrdata['hentet'] ? date('c', $vejrdata['hentet']) : null,
         'vejr_foraeldet' => $vejrdata['foraeldet'],
+        'vejr_fejl' => $vejrdata['fejl'] ?? null,
+        'vejr_proev_igen' => isset($vejrdata['proev_igen']) ? date('c', $vejrdata['proev_igen']) : null,
         'timer' => array_map(fn($r) => ['tid' => date('c', $r['ts']), 'spot' => $r['spot'],
             'pris' => $r['pris'], 'vejr' => $r['vejr']], $liste)], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     exit;
@@ -75,8 +77,8 @@ foreach ($liste as $r) $dage[date('Y-m-d', $r['ts'])][] = $r;
 <?php if (!$satserGyldige): ?><div class="warn">Prissatserne skal opdateres. Samlede elpriser vises igen, når satserne er kontrolleret.</div><?php endif; ?>
 <?php if (!$prices): ?><div class="warn">Spotpriserne kunne ikke hentes. Vejret vises fortsat, hvis det er tilgængeligt.</div>
 <?php elseif ($spotdata['foraeldet']): ?><div class="warn">Spotpriserne kunne ikke opdateres. Sidst hentet <?= esc(date('d/m H:i', $spotdata['hentet'])) ?>.</div><?php endif; ?>
-<?php if (!$vejrdata['timer']): ?><div class="warn">Vejret kunne ikke hentes. Elpriserne vises fortsat.</div>
-<?php elseif ($vejrdata['foraeldet']): ?><div class="warn">Vejrudsigten kunne ikke opdateres. Sidst hentet <?= esc(date('d/m H:i', $vejrdata['hentet'])) ?>.</div><?php endif; ?>
+<?php if (!$vejrdata['timer']): ?><div class="warn">Vejret kunne ikke hentes. <?= esc($vejrdata['fejl'] ?? '') ?> Elpriserne vises fortsat. Nyt forsøg ved næste besøg efter <?= esc(date('H:i', $vejrdata['proev_igen'] ?? time() + 120)) ?>.</div>
+<?php elseif ($vejrdata['foraeldet']): ?><div class="warn">Vejrudsigten kunne ikke opdateres. <?= esc($vejrdata['fejl'] ?? '') ?> Sidst hentet <?= esc(date('d/m H:i', $vejrdata['hentet'])) ?>.</div><?php endif; ?>
 <?php if ($bedsteVindue): ?>
 <div class="card hero"><div class="label">Billigste 3 timer i træk</div>
 <div class="when"><?= esc(tidspunkt($bedsteVindue['start'])) ?>–<?= esc(klok($bedsteVindue['start'] + 10800)) ?><?= date('Y-m-d', $bedsteVindue['start']) !== date('Y-m-d', $bedsteVindue['start'] + 10800) ? ' i morgen' : '' ?></div>

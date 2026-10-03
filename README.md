@@ -45,6 +45,9 @@ og vejr kan fejle uafhængigt. Gammel cache markeres tydeligt med hentetidspunkt
 Siden genindlæses hvert femte minut; spotdata caches 15 min., vejr 30 min.
 JSON: `/el/?format=json`. DMI’s Frie Data krediteres på siden.
 DMI-cache har et særskilt filnavn, så tidligere Open-Meteo-data aldrig vises som DMI.
+Ved fejl vises HTTP-status eller en forbindelsesfejl. Nye forsøg pauses i to
+minutter, også før første vellykkede hentning. Eksisterende vejrdata bevares.
+Forespørgslen begrænses til i dag og i morgen samt næste midnat til nedbørsberegningen.
 Dokumentation:
 https://www.dmi.dk/friedata/dokumentation/forecast-data-edr-api
 https://www.dmi.dk/friedata/dokumentation/data/weather-model-harmonie-edr-api-parameter-list

@@ -44,4 +44,7 @@ verifyDmi(rensVejr($bad) === [], 'Invalid calendar date rejected');
 $bad=$f; $bad['ranges']['temperature-2m']['values'][0]='273.15';
 verifyDmi(rensVejr($bad)[$keys[0]]['temperatur'] === null, 'String values rejected');
 verifyDmi(rensVejr(['hourly'=>[]]) === [], 'Old provider cache rejected');
+verifyDmi(strpos(dmiFejlTekst(429), '429') !== false, 'Busy response identified');
+verifyDmi(strpos(dmiFejlTekst(0), 'forbindelse') !== false, 'Connection failure identified');
+verifyDmi(strpos(dmiFejlTekst(200), 'dataformat') !== false, 'Invalid successful response identified');
 echo "OK: $checks DMI checks\n";

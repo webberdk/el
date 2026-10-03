@@ -215,35 +215,55 @@ function hentVejr(): array {
     if (!is_int($fetched) || $fetched <= 0 || $fetched > time()) { $rows = []; $fetched = null; }
     if ($rows && time() - (int)@filemtime($file) < VEJR_CACHE_SEKUNDER)
         return ['timer' => $rows, 'hentet' => $fetched, 'foraeldet' => time() - $fetched >= VEJR_CACHE_SEKUNDER];
+    $failureFile = $file . '.retry';
+    $failure = is_file($failureFile) ? json_decode((string)@file_get_contents($failureFile), true) : null;
+    if (is_int($failure['retry'] ?? null) && $failure['retry'] > time() && $failure['retry'] <= time() + 120)
+        return ['timer' => $rows, 'hentet' => $fetched, 'foraeldet' => true,
+            'fejl' => dmiFejlTekst((int)($failure['status'] ?? 0)), 'proev_igen' => $failure['retry']];
     $url = 'https://opendataapi.dmi.dk/v1/forecastedr/collections/harmonie_dini_sf/position?' . http_build_query([
         'coords' => 'POINT(' . VEJR_LON . ' ' . VEJR_LAT . ')', 'crs' => 'crs84',
         'parameter-name' => 'temperature-2m,wind-speed-10m,total-precipitation,fraction-of-cloud-cover,precipitation-type',
+        'datetime' => gmdate('Y-m-d\TH:i:s\Z', strtotime('today')) . '/' . gmdate('Y-m-d\TH:i:s\Z', strtotime('+2 days midnight')),
         'f' => 'CoverageJSON',
     ]);
-    $body = false;
+    $body = false; $status = 0;
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 4,
             CURLOPT_TIMEOUT => 12, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXFILESIZE => 2000000]);
+            CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXFILESIZE => 2000000,
+            CURLOPT_USERAGENT => 'smedegaard-flexenergi/1.0']);
         $body = curl_exec($ch);
-        if (curl_getinfo($ch, CURLINFO_HTTP_CODE) !== 200) $body = false;
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        if ($status !== 200) $body = false;
         curl_close($ch);
     } elseif (ini_get('allow_url_fopen')) {
-        $context = stream_context_create(['http' => ['timeout' => 12, 'follow_location' => 0],
+        $context = stream_context_create(['http' => ['timeout' => 12, 'follow_location' => 0, 'user_agent' => 'smedegaard-flexenergi/1.0'],
             'ssl' => ['verify_peer' => true, 'verify_peer_name' => true]]);
         $body = @file_get_contents($url, false, $context, 0, 2000000);
+        if (preg_match('/^HTTP\/\S+ (\d{3})/', $http_response_header[0] ?? '', $match)) $status = (int)$match[1];
+        if ($status !== 200) $body = false;
     }
     $json = is_string($body) ? json_decode($body, true) : null;
     $new = rensVejr($json);
     if ($new) {
+        if (is_file($failureFile)) @unlink($failureFile);
         $fetched = time();
         @file_put_contents($file, json_encode(['hentet' => $fetched, 'data' => $json]), LOCK_EX);
         return ['timer' => $new, 'hentet' => $fetched, 'foraeldet' => false];
     }
-    if ($rows) @touch($file, time() - VEJR_CACHE_SEKUNDER + 120);
-    return ['timer' => $rows, 'hentet' => $fetched, 'foraeldet' => true];
+    $retry = time() + 120;
+    @file_put_contents($failureFile, json_encode(['status' => $status, 'retry' => $retry]), LOCK_EX);
+    return ['timer' => $rows, 'hentet' => $fetched, 'foraeldet' => true,
+        'fejl' => dmiFejlTekst($status), 'proev_igen' => $retry];
+}
+
+function dmiFejlTekst(int $status): string {
+    if ($status === 429 || $status === 503) return 'DMI er midlertidigt belastet (HTTP ' . $status . ').';
+    if ($status === 0) return 'Webhotellet kunne ikke få forbindelse til DMI.';
+    if ($status === 200) return 'DMI svarede med et uventet dataformat.';
+    return 'DMI-kaldet fejlede (HTTP ' . $status . ').';
 }
 
 /** Simplified local symbols, not DMI's official weather-condition codes. */
