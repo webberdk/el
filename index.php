@@ -51,7 +51,11 @@ if (($_GET['format'] ?? '') === 'json') {
 function esc($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function tal(?float $v, int $decimals = 2): string { return $v === null ? '–' : number_format($v, $decimals, ',', '.'); }
 function dag(int $ts): string { return date('Y-m-d', $ts) === date('Y-m-d') ? 'I dag' : 'I morgen'; }
-function klok(int $ts): string { return date('H:i', $ts) . (date('I', $ts) ? ' CEST' : ' CET'); }
+function klok(int $ts): string {
+    $hour = date('Y-m-d H', $ts);
+    $repeated = $hour === date('Y-m-d H', $ts - 3600) || $hour === date('Y-m-d H', $ts + 3600);
+    return date('H:i', $ts) . ($repeated ? ' ' . date('T', $ts) : '');
+}
 function tidspunkt(int $ts): string { return dag($ts) . ' kl. ' . klok($ts); }
 function vindue(int $ts): bool {
     global $bedsteVindue;
@@ -108,7 +112,7 @@ foreach ($liste as $r) $dage[date('Y-m-d', $r['ts'])][] = $r;
 <span style="position:absolute;left:0;right:0;bottom:<?= $zero * .75 ?>%;border-top:1px solid var(--line)"></span>
 <?php if ($r['pris'] !== null): ?><span class="b <?= $r['pris'] < 0 ? 'negative' : '' ?>" style="position:absolute;bottom:<?= $bottom ?>%;height:<?= $height ?>%"></span><?php else: ?><span class="b missing"></span><?php endif; ?>
 <span class="price-value" style="bottom:<?= $bottom + $height ?>%"><span><?= tal($r['pris']) ?></span></span>
-</span><span class="hour-label" aria-hidden="true"><?= date('H:i', $r['ts']) ?></span>
+</span><span class="hour-label" aria-hidden="true"><?= esc(klok($r['ts'])) ?></span>
 <span class="weather" aria-hidden="true"><span class="weather-icon"><?php if ($symbol): ?><img src="icons/<?= esc($symbol) ?>.svg" width="24" height="24" alt=""><?php else: ?>–<?php endif; ?></span><span><?= tal($w['temperatur'] ?? null, 0) ?>°</span><span class="weather-small"><?= tal($w['nedboer'] ?? null, 1) ?> mm</span><span class="weather-small"><?= tal($w['vind'] ?? null, 1) ?> m/s</span></span>
 </button>
 <?php endforeach; ?></div></div>
