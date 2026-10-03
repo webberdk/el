@@ -39,7 +39,7 @@ if (($_GET['format'] ?? '') === 'json') {
         'satser_gyldige' => $satserGyldige, 'satser_til' => SATSER_TIL,
         'priser_opdateret' => $spotdata['hentet'] ? date('c', $spotdata['hentet']) : null,
         'priser_foraeldede' => $spotdata['foraeldet'],
-        'vejr_kilde' => 'DMI HARMONIE',
+        'vejr_kilde' => 'MET Norway Locationforecast',
         'vejr_opdateret' => $vejrdata['hentet'] ? date('c', $vejrdata['hentet']) : null,
         'vejr_foraeldet' => $vejrdata['foraeldet'],
         'vejr_fejl' => $vejrdata['fejl'] ?? null,
@@ -122,7 +122,7 @@ foreach ($liste as $r) $dage[date('Y-m-d', $r['ts'])][] = $r;
 <tr class="<?= $r['nu'] ? 'now' : ($r['fortid'] ? 'past' : '') ?><?= vindue($r['ts']) ? ' win' : '' ?>"><td><?= esc(tidspunkt($r['ts'])) ?></td><td><?= tal($r['pris']) ?></td><td><?= esc(vejrSymbol($w)[1]) ?></td><td><?= tal($w['temperatur'] ?? null, 1) ?></td><td><?= tal($w['nedboer'] ?? null, 1) ?></td><td><?= tal($w['vind'] ?? null, 1) ?></td></tr>
 <?php endforeach; ?></tbody></table></div></details></div>
 <p class="note forecast-note">Spotpriser opdateret <?= $spotdata['hentet'] ? esc(date('d/m H:i', $spotdata['hentet'])) : '–' ?> · vejr opdateret <?= $vejrdata['hentet'] ? esc(date('d/m H:i', $vejrdata['hentet'])) : '–' ?>.</p>
-<p class="note">Vejr: <a href="https://www.dmi.dk/friedata/">DMI’s Frie Data</a> · HARMONIE-prognose for Greve. Nedbør er summen for det viste timeinterval. Vejrsymboler er forenklet ud fra skydække og nedbør.</p>
+<p class="note">Vejr: <a href="https://api.met.no/">MET Norway</a> · Locationforecast for Greve · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Nedbør er summen for det viste timeinterval. METs vejrkoder vises med lokale ikoner; skydække og nedbør bruges, hvis en vejrkode mangler.</p>
 <details class="card"><summary>Sådan beregnes elprisen</summary>
 <p>Fire kvarterpriser fra Energinet for DK2 samles til timegennemsnit. Spotpris × 1,25 + Andels tillæg + Radius’ nettarif + Energinets tariffer + elafgift. Alle beløb i visningen er inklusive moms.</p>
 <p>Andels tillæg er <?= tal(ANDEL_TILLAEG * 100) ?> øre/kWh inklusive moms. Radius kundekategori C er lagt til grund. Faste el-, net- og systemabonnementer er ikke fordelt på kWh og betales oveni.</p>

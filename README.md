@@ -3,7 +3,7 @@
 Upload filerne i denne mappe til webhotellets mappe `el` i webroden. Åbn
 https://smedegaard.org/el/. Dette repository indeholder kun elpris- og vejrsiden.
 PHP 8.0+ med cURL eller `allow_url_fopen` og udgående HTTPS til Energinet og
-DMI kræves. Ingen API-nøgle, build eller cron er nødvendig.
+MET Norway kræves. Ingen API-nøgle, build eller cron er nødvendig.
 PHP skal kunne oprette en `cache`-mappe. Den beskyttes med `.htaccess` på Apache.
 
 ## Prisgrundlag
@@ -35,28 +35,35 @@ Kontrollér satser ved prisændringer, især 1. januar og 1. juli. Den 1. januar
 
 ## Vejr og drift
 
-Timeprognosen for Greve kommer direkte fra DMI’s HARMONIE-model via Forecast Data EDR API. Ingen API-nøgle kræves. Kelvin omregnes til °C, vind er m/s og akkumuleret nedbør (kg/m² = mm) omregnes til timeintervaller ved differensen mellem to nabotidspunkter fra samme modelkørsel. Manglende naboer og nulstilling af summer giver ukendt nedbør. Symbolerne er en enkel lokal klassifikation af skydække og nedbør, ikke DMI’s officielle symboler. Den nyeste prognose dækker ikke nødvendigvis tidligere timer i dag; disse vises som ukendte. Temperatur og vind er værdier
-ved timens begyndelse; nedbør er summen i det viste timeinterval. Alle tider
-kobles på UTC, så sommer- og vintertid håndteres korrekt. Begge gentagne
-02-timer får en separat værdi og kan skelnes i detaljer og tabel via CET/CEST.
+Timeprognosen for Greve hentes fra MET Norway Locationforecast 2.0 (`compact`).
+Ingen API-nøgle kræves. Temperatur er °C, vind er m/s og `next_1_hours`
+giver nedbør i mm for den efterfølgende time. Seks- og tolvtimerssummer
+fordeles aldrig som timeværdier. METs vejrkoder vises med lokale Lucide-ikoner;
+ved manglende koder bruges en enkel klassifikation af skydække og nedbør.
+Tidligere timer i dag kan mangle i den nyeste prognose og vises da som ukendte.
+Alle tider kobles via UTC, inklusive gentagne timer ved vintertid.
 
-I dag og i morgen vises. Ukendte priser eller vejrdata vises som “–”. Elpris
-og vejr kan fejle uafhængigt. Gammel cache markeres tydeligt med hentetidspunkt.
-Siden genindlæses hvert femte minut; spotdata caches 15 min., vejr 30 min.
-JSON: `/el/?format=json`. DMI’s Frie Data krediteres på siden.
-DMI-cache har et særskilt filnavn, så tidligere Open-Meteo-data aldrig vises som DMI.
-Ved fejl vises HTTP-status eller en forbindelsesfejl. Nye forsøg pauses i to
-minutter, også før første vellykkede hentning. Eksisterende vejrdata bevares.
-Forespørgslen begrænses til i dag og i morgen samt næste midnat til nedbørsberegningen.
+I dag og i morgen vises. Ukendte priser og vejrdata vises som “–”.
+Elpris og vejr kan fejle uafhængigt; gammel cache markeres med hentetidspunkt.
+Siden genindlæses hvert femte minut. METs `Expires` styrer vejrcachen, og
+`If-Modified-Since` bruges ved opdatering. User-Agent identificerer siden og
+linker til dette repo. MET Norway krediteres med CC BY 4.0-link på siden.
+Separat MET-cache forhindrer genbrug af tidligere udbyderes data.
+Ved fejl vises HTTP-status eller forbindelsesfejl. Forsøg pauses mindst to
+minutter, også før første vellykkede hentning; `Retry-After` respekteres. API-versionens udfasning (HTTP 203) vises som en advarsel.
+JSON: `/el/?format=json`.
+
 Dokumentation:
-https://www.dmi.dk/friedata/dokumentation/forecast-data-edr-api
-https://www.dmi.dk/friedata/dokumentation/data/weather-model-harmonie-edr-api-parameter-list
+https://api.met.no/doc/locationforecast/HowTO
+https://api.met.no/doc/ForecastJSON
+https://api.met.no/doc/TermsOfService
+https://api.met.no/doc/License
 
 
 ## Kontrol
 
-`php -l index.php`, `php -l functions.php` og `php tests/flexenergi.php` og `php tests/dmi.php`
+`php -l index.php`, `php -l functions.php` og `php tests/flexenergi.php` og `php tests/met.php`
 fra repository-roden. Kontroller inkluderer tarifgrænser, moms, manglende
-kvarterer, negative priser, gentagne timer ved vintertid og nedbørens timeinterval.
+kvarterer, negative priser, gentagne timer ved vintertid og METs timeintervaller og enheder.
 
 Vejrikoner: Lucide (ISC), licens i `icons/LICENSE`.
