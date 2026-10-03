@@ -3,7 +3,7 @@
 Upload filerne i denne mappe til webhotellets mappe `el` i webroden. Åbn
 https://smedegaard.org/el/. Dette repository indeholder kun elpris- og vejrsiden.
 PHP 8.0+ med cURL eller `allow_url_fopen` og udgående HTTPS til Energinet og
-Open-Meteo kræves. Ingen API-nøgle, build eller cron er nødvendig.
+DMI kræves. Ingen API-nøgle, build eller cron er nødvendig.
 PHP skal kunne oprette en `cache`-mappe. Den beskyttes med `.htaccess` på Apache.
 
 ## Prisgrundlag
@@ -35,7 +35,7 @@ Kontrollér satser ved prisændringer, især 1. januar og 1. juli. Den 1. januar
 
 ## Vejr og drift
 
-Timeprognosen for Greve kommer fra Open-Meteo. Temperatur og vind er værdier
+Timeprognosen for Greve kommer direkte fra DMI’s HARMONIE-model via Forecast Data EDR API. Ingen API-nøgle kræves. Kelvin omregnes til °C, vind er m/s og akkumuleret nedbør (kg/m² = mm) omregnes til timeintervaller ved differensen mellem to nabotidspunkter fra samme modelkørsel. Manglende naboer og nulstilling af summer giver ukendt nedbør. Symbolerne er en enkel lokal klassifikation af skydække og nedbør, ikke DMI’s officielle symboler. Den nyeste prognose dækker ikke nødvendigvis tidligere timer i dag; disse vises som ukendte. Temperatur og vind er værdier
 ved timens begyndelse; nedbør er summen i det viste timeinterval. Alle tider
 kobles på UTC, så sommer- og vintertid håndteres korrekt. Begge gentagne
 02-timer får en separat værdi og kan skelnes i detaljer og tabel via CET/CEST.
@@ -43,12 +43,16 @@ kobles på UTC, så sommer- og vintertid håndteres korrekt. Begge gentagne
 I dag og i morgen vises. Ukendte priser eller vejrdata vises som “–”. Elpris
 og vejr kan fejle uafhængigt. Gammel cache markeres tydeligt med hentetidspunkt.
 Siden genindlæses hvert femte minut; spotdata caches 15 min., vejr 30 min.
-JSON: `/el/?format=json`. Open-Meteos gratis endpoint er til ikke-kommerciel
-brug; attribution er inkluderet på siden. Kommerciel brug kræver deres passende plan.
+JSON: `/el/?format=json`. DMI’s Frie Data krediteres på siden.
+DMI-cache har et særskilt filnavn, så tidligere Open-Meteo-data aldrig vises som DMI.
+Dokumentation:
+https://www.dmi.dk/friedata/dokumentation/forecast-data-edr-api
+https://www.dmi.dk/friedata/dokumentation/data/weather-model-harmonie-edr-api-parameter-list
+
 
 ## Kontrol
 
-`php -l index.php`, `php -l functions.php` og `php tests/flexenergi.php`
+`php -l index.php`, `php -l functions.php` og `php tests/flexenergi.php` og `php tests/dmi.php`
 fra repository-roden. Kontroller inkluderer tarifgrænser, moms, manglende
 kvarterer, negative priser, gentagne timer ved vintertid og nedbørens timeinterval.
 

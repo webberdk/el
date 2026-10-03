@@ -146,62 +146,92 @@ function billigsteVindue(array $kommende): ?array {
 }
 
 
-/** Forecast timestamps are UTC epochs, including both repeated autumn hours. */
+/** DMI CoverageJSON, one grid point from one latest HARMONIE model run.
+ * Units from DMI's parameter catalogue: K, m/s, kg/m² (equivalent to mm), 0..1.
+ * https://www.dmi.dk/friedata/dokumentation/data/weather-model-harmonie-edr-api-parameter-list
+ */
 function rensVejr($data): array {
-    if (!is_array($data) || ($data['hourly_units']['time'] ?? '') !== 'unixtime'
-        || ($data['hourly_units']['temperature_2m'] ?? '') !== '°C'
-        || ($data['hourly_units']['wind_speed_10m'] ?? '') !== 'm/s'
-        || ($data['hourly_units']['precipitation'] ?? '') !== 'mm') return [];
-    $hours = $data['hourly'] ?? [];
-    if (!is_array($hours['time'] ?? null)) return [];
+    if (!is_array($data) || ($data['type'] ?? '') !== 'Coverage') return [];
+    $axes = $data['domain']['axes'] ?? [];
+    $times = $axes['t']['values'] ?? null;
+    if (!is_array($times) || !$times || count($times) > 200
+        || !is_array($axes['x']['values'] ?? null) || !is_array($axes['y']['values'] ?? null)
+        || count($axes['x']['values']) !== 1 || count($axes['y']['values']) !== 1) return [];
+    $values = [];
+    foreach (['temperature-2m', 'wind-speed-10m', 'total-precipitation', 'fraction-of-cloud-cover'] as $key) {
+        $range = $data['ranges'][$key] ?? [];
+        if (($range['axisNames'] ?? []) !== ['t', 'y', 'x']
+            || ($range['shape'] ?? []) !== [count($times), 1, 1]
+            || !is_array($range['values'] ?? null) || count($range['values']) !== count($times)) return [];
+        $values[$key] = $range['values'];
+    }
+    $types = $data['ranges']['precipitation-type'] ?? [];
+    $values['precipitation-type'] = ($types['axisNames'] ?? []) === ['t', 'y', 'x']
+        && ($types['shape'] ?? []) === [count($times), 1, 1] && is_array($types['values'] ?? null) ? $types['values'] : [];
+    $stamps = [];
+    foreach ($times as $t) {
+        if (!is_string($t) || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/', $t)) return [];
+        $format = strpos($t, '.') === false ? '!Y-m-d\TH:i:s\Z' : '!Y-m-d\TH:i:s.v\Z';
+        $date = DateTimeImmutable::createFromFormat($format, $t, new DateTimeZone('UTC'));
+        $errors = DateTimeImmutable::getLastErrors();
+        if (!$date || ($errors && ($errors['warning_count'] || $errors['error_count']))) return [];
+        $ts = $date->getTimestamp();
+        if ($ts % 3600 !== 0 || ($stamps && $ts <= end($stamps))) return [];
+        $stamps[] = $ts;
+    }
+    $number = static function ($v, float $min, float $max): ?float {
+        return (is_int($v) || is_float($v)) && is_finite((float)$v) && $v >= $min && $v <= $max ? (float)$v : null;
+    };
     $rows = [];
-    foreach ($hours['time'] as $i => $ts) {
-        if (!is_int($ts) || $ts % 3600 !== 0) continue;
-        $number = static function ($v, float $min, float $max): ?float {
-            return (is_int($v) || is_float($v)) && is_finite((float)$v) && $v >= $min && $v <= $max ? (float)$v : null;
-        };
-        $code = $hours['weather_code'][$i] ?? null;
-        // Open-Meteo precipitation is the preceding hour's sum; take the next
-        // timestamp for the interval starting at $ts. No next hour means unknown.
-        $next = ($hours['time'][$i + 1] ?? null) === $ts + 3600;
-        $rows[$ts] = [
-            'temperatur' => $number($hours['temperature_2m'][$i] ?? null, -90, 65),
-            'vind' => $number($hours['wind_speed_10m'][$i] ?? null, 0, 120),
-            'nedboer' => $next ? $number($hours['precipitation'][$i + 1] ?? null, 0, 500) : null,
-            'kode' => is_int($code) && in_array($code, [0,1,2,3,45,48,51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86,95,96,99], true) ? $code : null,
-            'dag' => ($hours['is_day'][$i] ?? null) === 1,
-        ];
+    foreach ($stamps as $i => $ts) {
+        $kelvin = $number($values['temperature-2m'][$i], 183.15, 338.15);
+        $wind = $number($values['wind-speed-10m'][$i], 0, 120);
+        $cloud = $number($values['fraction-of-cloud-cover'][$i], 0, 1);
+        $now = $number($values['total-precipitation'][$i], 0, 5000);
+        $next = ($stamps[$i + 1] ?? null) === $ts + 3600
+            ? $number($values['total-precipitation'][$i + 1], 0, 5000) : null;
+        // Difference within this response/model run for [ts, ts + 1h).
+        // A reset, missing sample, or gap means unknown, never a fabricated zero.
+        $rain = $now !== null && $next !== null && $next >= $now - 0.001
+            ? $number(max(0, $next - $now), 0, 500) : null;
+        if ($kelvin === null && $wind === null && $cloud === null && $rain === null) continue;
+        $type = $values['precipitation-type'][$i] ?? null;
+        $sun = date_sun_info($ts, VEJR_LAT, VEJR_LON);
+        $day = is_int($sun['sunrise']) && is_int($sun['sunset']) && $ts >= $sun['sunrise'] && $ts < $sun['sunset'];
+        $rows[$ts] = ['temperatur' => $kelvin === null ? null : round($kelvin - 273.15, 4),
+            'vind' => $wind, 'nedboer' => $rain, 'skydaekke' => $cloud,
+            'nedboerstype' => (is_int($type) || is_float($type)) && floor($type) === (float)$type && $type >= 0 && $type <= 7 ? (int)$type : null,
+            'dag' => $day];
     }
     return $rows;
 }
 
 function hentVejr(): array {
     cacheSti();
-    $file = __DIR__ . '/cache/weather-' . VEJR_LAT . '-' . VEJR_LON . '.json';
+    $file = __DIR__ . '/cache/dmi-weather-v1-' . VEJR_LAT . '-' . VEJR_LON . '.json';
     $cached = is_file($file) ? json_decode((string)@file_get_contents($file), true) : null;
     $fetched = $cached['hentet'] ?? null;
     $rows = rensVejr($cached['data'] ?? null);
     if (!is_int($fetched) || $fetched <= 0 || $fetched > time()) { $rows = []; $fetched = null; }
     if ($rows && time() - (int)@filemtime($file) < VEJR_CACHE_SEKUNDER)
         return ['timer' => $rows, 'hentet' => $fetched, 'foraeldet' => time() - $fetched >= VEJR_CACHE_SEKUNDER];
-    $url = 'https://api.open-meteo.com/v1/forecast?' . http_build_query([
-        'latitude' => VEJR_LAT, 'longitude' => VEJR_LON,
-        'hourly' => 'temperature_2m,precipitation,weather_code,wind_speed_10m,is_day',
-        'wind_speed_unit' => 'ms', 'timeformat' => 'unixtime', 'timezone' => 'UTC',
-        'past_days' => 1, 'forecast_days' => 3,
+    $url = 'https://opendataapi.dmi.dk/v1/forecastedr/collections/harmonie_dini_sf/position?' . http_build_query([
+        'coords' => 'POINT(' . VEJR_LON . ' ' . VEJR_LAT . ')', 'crs' => 'crs84',
+        'parameter-name' => 'temperature-2m,wind-speed-10m,total-precipitation,fraction-of-cloud-cover,precipitation-type',
+        'f' => 'CoverageJSON',
     ]);
     $body = false;
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 4,
-            CURLOPT_TIMEOUT => 8, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_TIMEOUT => 12, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXFILESIZE => 2000000]);
         $body = curl_exec($ch);
         if (curl_getinfo($ch, CURLINFO_HTTP_CODE) !== 200) $body = false;
         curl_close($ch);
     } elseif (ini_get('allow_url_fopen')) {
-        $context = stream_context_create(['http' => ['timeout' => 8, 'follow_location' => 0],
+        $context = stream_context_create(['http' => ['timeout' => 12, 'follow_location' => 0],
             'ssl' => ['verify_peer' => true, 'verify_peer_name' => true]]);
         $body = @file_get_contents($url, false, $context, 0, 2000000);
     }
@@ -216,16 +246,19 @@ function hentVejr(): array {
     return ['timer' => $rows, 'hentet' => $fetched, 'foraeldet' => true];
 }
 
+/** Simplified local symbols, not DMI's official weather-condition codes. */
 function vejrSymbol(?array $weather): array {
-    $code = $weather['kode'] ?? null;
-    if ($code === null) return [null, 'Vejr mangler'];
-    if ($code === 0) return [$weather['dag'] ? 'sun' : 'moon', $weather['dag'] ? 'Klart' : 'Klar nat'];
-    if ($code <= 2) return [$weather['dag'] ? 'cloud-sun' : 'cloud-moon', 'Let skyet'];
-    if ($code === 3) return ['cloud', 'Overskyet'];
-    if ($code <= 48) return ['cloud-fog', 'Tåge'];
-    if (in_array($code, [56,57,66,67], true)) return ['cloud-rain', 'Underafkølet nedbør'];
-    if ($code <= 67) return ['cloud-rain', 'Regn'];
-    if ($code <= 77 || in_array($code, [85,86], true)) return ['cloud-snow', 'Sne'];
-    if ($code <= 82) return ['cloud-drizzle', 'Regnbyger'];
-    return ['cloud-lightning', 'Torden'];
+    if (!$weather) return [null, 'Vejr mangler'];
+    $rain = $weather['nedboer'] ?? null;
+    $cloud = $weather['skydaekke'] ?? null;
+    $type = $weather['nedboerstype'] ?? null;
+    if ($rain !== null && $rain >= 0.1) {
+        if (in_array($type, [2,3,6,7], true)) return ['cloud-snow', $type === 2 ? 'Slud' : ($type === 7 ? 'Hagl' : 'Sne')];
+        if (in_array($type, [4,5], true)) return ['cloud-rain', 'Underafkølet nedbør'];
+        return ['cloud-rain', 'Nedbør'];
+    }
+    if ($cloud === null) return [null, 'Vejrtype mangler'];
+    if ($cloud <= 0.2) return [$weather['dag'] ? 'sun' : 'moon', $weather['dag'] ? 'Klart' : 'Klar nat'];
+    if ($cloud <= 0.8) return [$weather['dag'] ? 'cloud-sun' : 'cloud-moon', 'Delvist skyet'];
+    return ['cloud', 'Overskyet'];
 }

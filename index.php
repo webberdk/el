@@ -39,6 +39,7 @@ if (($_GET['format'] ?? '') === 'json') {
         'satser_gyldige' => $satserGyldige, 'satser_til' => SATSER_TIL,
         'priser_opdateret' => $spotdata['hentet'] ? date('c', $spotdata['hentet']) : null,
         'priser_foraeldede' => $spotdata['foraeldet'],
+        'vejr_kilde' => 'DMI HARMONIE',
         'vejr_opdateret' => $vejrdata['hentet'] ? date('c', $vejrdata['hentet']) : null,
         'vejr_foraeldet' => $vejrdata['foraeldet'],
         'timer' => array_map(fn($r) => ['tid' => date('c', $r['ts']), 'spot' => $r['spot'],
@@ -88,7 +89,7 @@ foreach ($liste as $r) $dage[date('Y-m-d', $r['ts'])][] = $r;
 <div class="mid"><?= tal($billigste['pris'] ?? null) ?> <span class="unit">kr/kWh</span></div>
 <div class="note"><?= $billigste ? esc(tidspunkt($billigste['ts'])) : 'Afventer priser' ?></div></div></div>
 <div class="card"><h2 class="section-title">Elpris og vejr time for time</h2>
-<p class="price-note">Tryk på en time for detaljer. Stryg til siden for flere timer.</p>
+<p class="price-note">Priser i kr/kWh inklusive moms, transport og afgifter. Tryk på en time for detaljer. Stryg til siden for flere timer.</p>
 <?php foreach ($dage as $timer): ?>
 <h3 class="day-title"><?= esc(dag($timer[0]['ts'])) ?> · <?= date('d/m', $timer[0]['ts']) ?></h3>
 <div class="chart-scroll" tabindex="0" role="region" aria-label="<?= esc(dag($timer[0]['ts'])) ?> priser og vejr"><div class="chart" role="group" aria-label="Vælg en time">
@@ -96,14 +97,15 @@ foreach ($liste as $r) $dage[date('Y-m-d', $r['ts'])][] = $r;
     $w = $r['vejr']; [$symbol, $description] = vejrSymbol($w);
     $class = $r['fortid'] ? 'past' : ($r['nu'] ? 'now' : (vindue($r['ts']) ? 'cheap' : ''));
     $label = tidspunkt($r['ts']) . ' · ' . ($r['pris'] === null ? 'Pris afventer' : tal($r['pris']) . ' kr/kWh') . ' · ' . vejrTekst($w);
-    $height = $r['pris'] === null ? 0 : abs($r['pris']) / $range * 85;
-    $bottom = $r['pris'] !== null && $r['pris'] < 0 ? $zero * .85 - $height : $zero * .85;
+    $height = $r['pris'] === null ? 0 : abs($r['pris']) / $range * 75;
+    $bottom = $r['pris'] !== null && $r['pris'] < 0 ? $zero * .75 - $height : $zero * .75;
 ?>
 <button type="button" class="hour <?= esc($class) ?>" aria-pressed="false" aria-label="<?= esc($label) ?>" data-tip="<?= esc($label) ?>">
 <span class="plot" aria-hidden="true">
 <span class="marker"><?= $r['nu'] ? 'Nu' : ($billigste && $r['ts'] === $billigste['ts'] ? 'Lavest' : (vindue($r['ts']) ? '★' : '')) ?></span>
-<span style="position:absolute;left:0;right:0;bottom:<?= $zero * .85 ?>%;border-top:1px solid var(--line)"></span>
+<span style="position:absolute;left:0;right:0;bottom:<?= $zero * .75 ?>%;border-top:1px solid var(--line)"></span>
 <?php if ($r['pris'] !== null): ?><span class="b <?= $r['pris'] < 0 ? 'negative' : '' ?>" style="position:absolute;bottom:<?= $bottom ?>%;height:<?= $height ?>%"></span><?php else: ?><span class="b missing"></span><?php endif; ?>
+<span class="price-value" style="bottom:<?= $bottom + $height ?>%"><span><?= tal($r['pris']) ?></span></span>
 </span><span class="hour-label" aria-hidden="true"><?= date('H:i', $r['ts']) ?></span>
 <span class="weather" aria-hidden="true"><span class="weather-icon"><?php if ($symbol): ?><img src="icons/<?= esc($symbol) ?>.svg" width="24" height="24" alt=""><?php else: ?>–<?php endif; ?></span><span><?= tal($w['temperatur'] ?? null, 0) ?>°</span><span class="weather-small"><?= tal($w['nedboer'] ?? null, 1) ?> mm</span><span class="weather-small"><?= tal($w['vind'] ?? null, 1) ?> m/s</span></span>
 </button>
@@ -118,7 +120,7 @@ foreach ($liste as $r) $dage[date('Y-m-d', $r['ts'])][] = $r;
 <tr class="<?= $r['nu'] ? 'now' : ($r['fortid'] ? 'past' : '') ?><?= vindue($r['ts']) ? ' win' : '' ?>"><td><?= esc(tidspunkt($r['ts'])) ?></td><td><?= tal($r['pris']) ?></td><td><?= esc(vejrSymbol($w)[1]) ?></td><td><?= tal($w['temperatur'] ?? null, 1) ?></td><td><?= tal($w['nedboer'] ?? null, 1) ?></td><td><?= tal($w['vind'] ?? null, 1) ?></td></tr>
 <?php endforeach; ?></tbody></table></div></details></div>
 <p class="note forecast-note">Spotpriser opdateret <?= $spotdata['hentet'] ? esc(date('d/m H:i', $spotdata['hentet'])) : '–' ?> · vejr opdateret <?= $vejrdata['hentet'] ? esc(date('d/m H:i', $vejrdata['hentet'])) : '–' ?>.</p>
-<p class="note">Vejr: <a href="https://open-meteo.com/">Open-Meteo</a> (CC BY 4.0). Prognose for Greve; nedbør er summen for det viste timeinterval.</p>
+<p class="note">Vejr: <a href="https://www.dmi.dk/friedata/">DMI’s Frie Data</a> · HARMONIE-prognose for Greve. Nedbør er summen for det viste timeinterval. Vejrsymboler er forenklet ud fra skydække og nedbør.</p>
 <details class="card"><summary>Sådan beregnes elprisen</summary>
 <p>Fire kvarterpriser fra Energinet for DK2 samles til timegennemsnit. Spotpris × 1,25 + Andels tillæg + Radius’ nettarif + Energinets tariffer + elafgift. Alle beløb i visningen er inklusive moms.</p>
 <p>Andels tillæg er <?= tal(ANDEL_TILLAEG * 100) ?> øre/kWh inklusive moms. Radius kundekategori C er lagt til grund. Faste el-, net- og systemabonnementer er ikke fordelt på kWh og betales oveni.</p>
